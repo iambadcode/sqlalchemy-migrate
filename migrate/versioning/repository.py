@@ -2,6 +2,7 @@
    SQLAlchemy migrate repository management.
 """
 import os
+import re
 import shutil
 import string
 import logging
@@ -46,6 +47,7 @@ class Changeset(dict):
         ret = list(super(Changeset, self).keys())
         # Reverse order if downgrading
         ret.sort(reverse=(self.step < 1))
+        print ret
         return ret
 
     def values(self):
@@ -57,7 +59,7 @@ class Changeset(dict):
     def add(self, change):
         """Add new change to changeset"""
         key = self.end
-        self.end += self.step
+        self.end = change
         self[key] = change
 
     def run(self, *p, **k):
@@ -69,6 +71,7 @@ class Changeset(dict):
 class Repository(pathed.Pathed):
     """A project's change script repository"""
 
+    FILENAME_WITH_VERSION = re.compile(r'^(\d{3,}).*')
     _config = 'migrate.cfg'
     _versions = 'versions'
 
@@ -220,8 +223,34 @@ class Repository(pathed.Pathed):
             step = -1
             range_mod = 0
             op = 'downgrade'
+            
+        # Create temporary list of files, allowing skipped version numbers.
+        files = os.listdir(os.path.join(self.path, self._versions))
+        tempversions = []
+        for filename in files:
+            match = self.FILENAME_WITH_VERSION.match(filename)
+            if match:
+                num = int(match.group(1))
+                tempversions.append(num)
+            else:
+                pass  # Must be a helper file or something, let's ignore it.
+        tempversions = list(set(tempversions)) # Remove duplicates.
+        versions = []
+        print start
+        print end
+        for versioner in tempversions:
+            if start <= end:
+                if versioner > start and versioner <= end:
+                    versions.append(num)
+            else:
+                if versioner <= start and versioner > end:
+                    versions.append(num)
+        if start > end:
+            versions.reverse()
 
-        versions = range(int(start) + range_mod, int(end) + range_mod, step)
+        # This takes a long time for time based files.
+        #versions = range(int(start) + range_mod, int(end) + range_mod, step)
+        print versions
         changes = [self.version(v).script(database, op) for v in versions]
         ret = Changeset(start, step=step, *changes)
         return ret
